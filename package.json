@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "indexer:run": "node src/indexer/run.js"
+    "indexer:run": "node src/indexer/run.js",
+    "migrate": "node scripts/migrate.js"
   },
   "keywords": [
     "express",
