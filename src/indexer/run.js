@@ -695,9 +695,13 @@ async function main() {
     if (WS_RPC_URL) {
       try {
         provider = new ethers.WebSocketProvider(WS_RPC_URL);
-        provider.on('close', reconnect);
-        provider.on('error', reconnect);
         attachBlockListener();
+        // Attach low-level ws listeners if exposed (v6 doesn't support 'close' provider events)
+        const ws = provider._ws || provider._websocket || provider._socket;
+        if (ws && ws.on) {
+          ws.on('close', reconnect);
+          ws.on('error', reconnect);
+        }
       } catch (err) {
         console.error('Failed to recreate WS provider', err);
         setTimeout(reconnect, 3000);
@@ -706,8 +710,11 @@ async function main() {
   };
 
   if (WS_RPC_URL && provider instanceof ethers.WebSocketProvider) {
-    provider.on('close', reconnect);
-    provider.on('error', reconnect);
+    const ws = provider._ws || provider._websocket || provider._socket;
+    if (ws && ws.on) {
+      ws.on('close', reconnect);
+      ws.on('error', reconnect);
+    }
   }
 
   // Fallback polling in case WS drops or misses events
