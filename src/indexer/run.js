@@ -37,10 +37,13 @@ if (!RPC_URL) {
   throw new Error('RPC_URL env is required for indexer');
 }
 
-const provider = WS_RPC_URL
+// HTTP provider is always available (used for backfill and writes)
+const httpProvider = new ethers.JsonRpcProvider(RPC_URL);
+const writeProvider = httpProvider;
+// WS provider is created/recreated below
+let provider = WS_RPC_URL
   ? new ethers.WebSocketProvider(WS_RPC_URL)
-  : new ethers.JsonRpcProvider(RPC_URL);
-const writeProvider = new ethers.JsonRpcProvider(RPC_URL);
+  : httpProvider;
 const relayerSigner = RELAYER_ENABLED
   ? new ethers.Wallet(RELAYER_PK, writeProvider)
   : null;
@@ -667,11 +670,49 @@ async function main() {
     }
   };
 
-  provider.on('block', processFinalizedGap);
+  const attachBlockListener = () => {
+    if (provider && provider.on) {
+      provider.on('block', processFinalizedGap);
+    }
+  };
+  attachBlockListener();
+
+  // Handle WS disconnects: backfill via HTTP and recreate WS provider
+  const reconnect = async () => {
+    try {
+      const latest = await httpProvider.getBlockNumber();
+      const target = latest - FINALITY;
+      if (target > lastProcessed) {
+        const from = lastProcessed + 1;
+        const to = target;
+        pools = await processRange(from, to, pools);
+        await setCheckpoint(to);
+        lastProcessed = to;
+      }
+    } catch (err) {
+      console.error('Reconnect backfill failed', err);
+    }
+    if (WS_RPC_URL) {
+      try {
+        provider = new ethers.WebSocketProvider(WS_RPC_URL);
+        provider.on('close', reconnect);
+        provider.on('error', reconnect);
+        attachBlockListener();
+      } catch (err) {
+        console.error('Failed to recreate WS provider', err);
+        setTimeout(reconnect, 3000);
+      }
+    }
+  };
+
+  if (WS_RPC_URL && provider instanceof ethers.WebSocketProvider) {
+    provider.on('close', reconnect);
+    provider.on('error', reconnect);
+  }
 
   // Fallback polling in case WS drops or misses events
   setInterval(async () => {
-    const latest = await provider.getBlockNumber();
+    const latest = await httpProvider.getBlockNumber();
     await processFinalizedGap(latest);
   }, BLOCK_POLL_INTERVAL_MS);
 
