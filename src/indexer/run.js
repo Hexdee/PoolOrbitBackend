@@ -80,7 +80,7 @@ const poolWriteAbi = [
   'function generatedConsolationWinners() view returns (uint32)',
   'function consolationPrizeEach() view returns (uint256)',
   'function consolationWinnerBps() view returns (uint96)',
-  'function closePool()',
+  'function closeIfFull()',
   'function finalizeWinners()',
   'function batchFinalizeWinners(uint256 iterations)',
   'function payJackpotWinner()',
@@ -644,11 +644,11 @@ async function relayerLoop() {
     for (const poolId of ready) {
       try {
         const pool = new ethers.Contract(poolId, poolWriteAbi, relayerSigner);
-        const tx = await pool.closePool();
+        const tx = await pool.closeIfFull();
         await tx.wait();
         await setRelayerCheckpoint(poolId, 'closed');
       } catch (err) {
-        console.warn(`Relayer closePool failed for ${poolId}:`, err);
+        console.warn(`Relayer closeIfFull failed for ${poolId}:`, err);
       }
     }
 
