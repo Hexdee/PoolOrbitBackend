@@ -80,6 +80,7 @@ const poolWriteAbi = [
   'function generatedConsolationWinners() view returns (uint32)',
   'function consolationPrizeEach() view returns (uint256)',
   'function consolationWinnerBps() view returns (uint96)',
+  'function closePool()',
   'function finalizeWinners()',
   'function batchFinalizeWinners(uint256 iterations)',
   'function payJackpotWinner()',
@@ -431,9 +432,19 @@ async function getKnownPools() {
   return rows.map((r) => r.pool_id);
 }
 
+async function getFullOpenPools() {
+  const { rows } = await db.query(
+    'SELECT pool_id FROM pools WHERE closed = FALSE AND deposited IS NOT NULL AND pool_size IS NOT NULL AND deposited >= pool_size'
+  );
+  return rows.map((r) => r.pool_id);
+}
+
 async function getClosedPools() {
   const { rows } = await db.query(
-    'SELECT pool_id FROM pools WHERE closed = TRUE'
+    `SELECT p.pool_id
+     FROM pools p
+     LEFT JOIN relayer_state r ON p.pool_id = r.pool_id
+     WHERE p.closed = TRUE AND (r.last_action IS NULL OR r.last_action <> 'completed')`
   );
   return rows.map((r) => r.pool_id);
 }
@@ -490,7 +501,9 @@ async function processRange(fromBlock, toBlock, poolAddresses) {
   }
   const poolSet = Array.from(dedupMap.values());
   if (!poolSet.length) {
-    console.log(`No pool addresses to process for blocks ${fromBlock}-${toBlock}`);
+    console.log(
+      `No pool addresses to process for blocks ${fromBlock}-${toBlock}`
+    );
     return poolSet;
   }
 
@@ -513,7 +526,12 @@ async function processRange(fromBlock, toBlock, poolAddresses) {
       `No pool logs found for ${poolSet.length} pools in blocks ${fromBlock}-${toBlock}`
     );
   } else {
-    const tally = { TicketPurchased: 0, PoolClosed: 0, PrizeClaimed: 0, other: 0 };
+    const tally = {
+      TicketPurchased: 0,
+      PoolClosed: 0,
+      PrizeClaimed: 0,
+      other: 0,
+    };
     for (const l of poolLogs) {
       try {
         const parsed = poolIface.parseLog(l);
@@ -620,11 +638,28 @@ async function relayerLoop() {
   if (!RELAYER_ENABLED) return;
   if (relayerLoop.running) return;
   relayerLoop.running = true;
-  const pools = await getClosedPools();
-  for (const poolId of pools) {
-    await evaluatePool(poolId);
+  try {
+    // First, close any pools that are full but not marked closed on-chain
+    const ready = await getFullOpenPools();
+    for (const poolId of ready) {
+      try {
+        const pool = new ethers.Contract(poolId, poolWriteAbi, relayerSigner);
+        const tx = await pool.closePool();
+        await tx.wait();
+        await setRelayerCheckpoint(poolId, 'closed');
+      } catch (err) {
+        console.warn(`Relayer closePool failed for ${poolId}:`, err);
+      }
+    }
+
+    // Then process already closed pools for payouts
+    const pools = await getClosedPools();
+    for (const poolId of pools) {
+      await evaluatePool(poolId);
+    }
+  } finally {
+    relayerLoop.running = false;
   }
-  relayerLoop.running = false;
 }
 relayerLoop.running = false;
 
