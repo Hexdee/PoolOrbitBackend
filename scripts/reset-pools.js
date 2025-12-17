@@ -2,9 +2,31 @@ const { Client } = require('pg');
 require('dotenv').config();
 
 (async () => {
-  const client = new Client({
-    connectionString: process.env.DATABASE_URL,
-  });
+// Build PG config from env; supports DATABASE_URL or discrete PG* vars and optional SSL.
+const makePgConfig = () => {
+  const sslRequired =
+    process.env.PGSSLMODE === 'require' ||
+    process.env.PGSSL === 'true' ||
+    (process.env.DATABASE_URL || '').includes('sslmode=require');
+
+  if (process.env.DATABASE_URL) {
+    return {
+      connectionString: process.env.DATABASE_URL,
+      ssl: sslRequired ? { rejectUnauthorized: false } : undefined,
+    };
+  }
+
+  return {
+    host: process.env.PGHOST || 'localhost',
+    port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
+    user: process.env.PGUSER || 'postgres',
+    password: process.env.PGPASSWORD,
+    database: process.env.PGDATABASE || 'poolorbit',
+    ssl: sslRequired ? { rejectUnauthorized: false } : undefined,
+  };
+};
+
+const client = new Client(makePgConfig());
   await client.connect();
 
   try {
