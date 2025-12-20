@@ -176,7 +176,7 @@ router.get('/pools/user/:address/history', async (req, res, next) => {
   const offset = parseOffset(req.query.offset);
   const status = req.query.status;
 
-  const whereParts = ['LOWER(part.participant_address) = LOWER($1)'];
+  const whereParts = ['1=1'];
   const params = [user];
   if (status === 'closed') {
     whereParts.push('p.closed = TRUE');
