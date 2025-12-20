@@ -119,7 +119,7 @@ router.get('/pools/user/:address', async (req, res, next) => {
   const offset = parseOffset(req.query.offset);
   const status = req.query.status;
 
-  const whereParts = ['LOWER(part.participant_address) = LOWER($1)'];
+  const whereParts = ['1=1'];
   const params = [user];
   if (status === 'closed') {
     whereParts.push('p.closed = TRUE');
@@ -236,6 +236,11 @@ router.get('/pools/user/:address/history', async (req, res, next) => {
        JOIN tokens tok ON tok.address = p.token_address
        LEFT JOIN user_wins uw ON uw.pool_id = p.pool_id
        WHERE ${whereParts.join(' AND ')}
+         AND EXISTS (
+           SELECT 1 FROM participants part
+           WHERE part.pool_id = p.pool_id
+             AND LOWER(part.participant_address) = LOWER($1)
+         )
        ORDER BY p.block_time DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
