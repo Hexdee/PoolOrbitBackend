@@ -169,6 +169,83 @@ router.get('/pools/user/:address', async (req, res, next) => {
   }
 });
 
+// Detailed user pool history in a single query for My Pool History page
+router.get('/pools/user/:address/history', async (req, res, next) => {
+  const user = req.params.address;
+  const limit = parseLimit(req.query.limit, 25, 200);
+  const offset = parseOffset(req.query.offset);
+  const status = req.query.status;
+
+  const whereParts = ['LOWER(part.participant_address) = LOWER($1)'];
+  const params = [user];
+  if (status === 'closed') {
+    whereParts.push('p.closed = TRUE');
+  } else if (status === 'active') {
+    whereParts.push('p.closed = FALSE');
+  }
+
+  params.push(limit, offset);
+
+  try {
+    const { rows } = await db.query(
+      `WITH user_participation AS (
+         SELECT part.pool_id,
+                SUM(part.amount) AS user_amount,
+                SUM(part.entries) AS user_entries,
+                ARRAY_AGG(part.tx_hash ORDER BY part.block_number DESC NULLS LAST, part.log_index DESC NULLS LAST) AS tx_hashes
+         FROM participants part
+         WHERE LOWER(part.participant_address) = LOWER($1)
+         GROUP BY part.pool_id
+       ),
+       user_wins AS (
+         SELECT w.pool_id,
+                SUM(w.amount) AS win_amount
+         FROM winners w
+         WHERE LOWER(w.winner_address) = LOWER($1)
+           AND (w.prize_type IN ('jackpot', 'consolation') OR w.prize_type IS NULL)
+         GROUP BY w.pool_id
+       )
+       SELECT p.pool_id,
+              p.template_id,
+              p.deposited,
+              p.total_entries,
+              p.participant_count,
+              p.closed,
+              p.pool_size,
+              p.entry_fee,
+              p.jackpot_winner,
+              p.jackpot_amount,
+              p.block_time,
+              p.created_tx_hash,
+              p.created_block_number,
+              p.created_block_time,
+              p.closed_tx_hash,
+              p.closed_block_number,
+              p.closed_block_time,
+              p.token_address,
+              tok.decimals AS token_decimals,
+              tok.symbol AS token_symbol,
+              tok.logo_url AS token_logo,
+              up.user_amount,
+              up.user_entries,
+              up.tx_hashes[1] AS user_last_tx_hash,
+              uw.win_amount AS user_win_amount,
+              ${fillPercentageSelect} AS fill_percentage
+       FROM user_participation up
+       JOIN pools p ON p.pool_id = up.pool_id
+       JOIN tokens tok ON tok.address = p.token_address
+       LEFT JOIN user_wins uw ON uw.pool_id = p.pool_id
+       WHERE ${whereParts.join(' AND ')}
+       ORDER BY p.block_time DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    res.json({ data: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/winners/recent', async (req, res, next) => {
   const limit = parseLimit(req.query.limit, 10, 100);
   const token = req.query.token;

@@ -61,7 +61,7 @@ router.get('/', async (req, res, next) => {
        FROM pools p
        JOIN tokens tok ON tok.address = p.token_address
        WHERE ${whereParts.join(' AND ')}
-       ORDER BY p.block_time DESC
+       ORDER BY p.pool_size ASC, p.block_time DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
