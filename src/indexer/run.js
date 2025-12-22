@@ -339,10 +339,11 @@ async function handlePoolLog(log) {
     const entryFee = BigInt(poolRes.rows[0].entry_fee || '0');
     const amountBig = BigInt(amount);
     const entries = entryFee > 0n ? amountBig / entryFee : 0n;
-    await db.query(
+    const insertRes = await db.query(
       `INSERT INTO participants (pool_id, participant_address, amount, entries, tx_hash, block_number, block_time, log_index, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $7)
-       ON CONFLICT (tx_hash, log_index) DO NOTHING`,
+       ON CONFLICT (tx_hash, log_index) DO NOTHING
+       RETURNING amount, entries`,
       [
         poolId,
         account,
@@ -354,16 +355,18 @@ async function handlePoolLog(log) {
         logIndex,
       ]
     );
-    await db.query(
-      `UPDATE pools
-       SET deposited = deposited + $2::numeric,
-           total_entries = total_entries + $3::numeric,
-           participant_count = (
-             SELECT COUNT(DISTINCT participant_address) FROM participants WHERE pool_id = $1
-           )
-       WHERE pool_id = $1`,
-      [poolId, amountBig.toString(), entries.toString()]
-    );
+    if (insertRes.rowCount > 0) {
+      await db.query(
+        `UPDATE pools
+         SET deposited = deposited + $2::numeric,
+             total_entries = total_entries + $3::numeric,
+             participant_count = (
+               SELECT COUNT(DISTINCT participant_address) FROM participants WHERE pool_id = $1
+             )
+         WHERE pool_id = $1`,
+        [poolId, amountBig.toString(), entries.toString()]
+      );
+    }
     return;
   }
 
@@ -396,10 +399,11 @@ async function handlePoolLog(log) {
       `PrizeClaimed detected pool=${poolId} winner=${winner} type=${prizeType} amount=${amount} tx=${txHash} logIndex=${logIndex}`
     );
     try {
-      await db.query(
+      const ins = await db.query(
         `INSERT INTO winners (pool_id, winner_address, amount, prize_type, tx_hash, block_number, block_time, log_index, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $7)
-         ON CONFLICT (tx_hash, log_index) DO NOTHING`,
+         ON CONFLICT (tx_hash, log_index) DO NOTHING
+         RETURNING 1`,
         [
           poolId,
           winner,
@@ -411,7 +415,7 @@ async function handlePoolLog(log) {
           logIndex,
         ]
       );
-      if (prizeType === 'jackpot') {
+      if (ins.rowCount > 0 && prizeType === 'jackpot') {
         await db.query(
           `UPDATE pools SET jackpot_winner = $2, jackpot_amount = COALESCE(jackpot_amount, $3) WHERE pool_id = $1`,
           [poolId, winner, amount]
