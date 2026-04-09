@@ -109,7 +109,7 @@ async function ensureStateTable() {
 async function getCheckpoint() {
   const { rows } = await db.query(
     'SELECT value FROM indexer_state WHERE key = $1',
-    [stateKey]
+    [stateKey],
   );
   if (rows.length) return parseInt(rows[0].value, 10);
   if (START_BLOCK !== undefined) return START_BLOCK;
@@ -121,14 +121,14 @@ async function setCheckpoint(blockNumber) {
     `INSERT INTO indexer_state (key, value, updated_at)
      VALUES ($1, $2, NOW())
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-    [stateKey, String(blockNumber)]
+    [stateKey, String(blockNumber)],
   );
 }
 
 async function ensureToken(tokenAddress) {
   const { rows } = await db.query(
     'SELECT address FROM tokens WHERE LOWER(address) = LOWER($1)',
-    [tokenAddress]
+    [tokenAddress],
   );
   if (rows.length) return;
   try {
@@ -152,14 +152,14 @@ async function ensureToken(tokenAddress) {
         data: erc20Iface.encodeFunctionData('decimals', []),
       })
       .then((data) =>
-        Number(erc20Iface.decodeFunctionResult('decimals', data)[0])
+        Number(erc20Iface.decodeFunctionResult('decimals', data)[0]),
       )
       .catch(() => 18);
     await db.query(
       `INSERT INTO tokens (address, symbol, name, decimals)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (address) DO NOTHING`,
-      [tokenAddress, symbol, name, decimals]
+      [tokenAddress, symbol, name, decimals],
     );
   } catch (err) {
     console.warn(`Failed to fetch token metadata for ${tokenAddress}`, err);
@@ -170,7 +170,7 @@ async function upsertTemplate(templateId, meta = {}) {
   const factory = new ethers.Contract(
     FACTORY_ADDRESS,
     factoryReadAbi,
-    provider
+    provider,
   );
   const tpl = await factory.getTemplate(templateId);
   if (!tpl.exists) return;
@@ -199,7 +199,7 @@ async function upsertTemplate(templateId, meta = {}) {
       meta.txHash || null,
       meta.blockNumber || null,
       meta.blockTime || null,
-    ]
+    ],
   );
 
   if (tpl.currentPool && tpl.currentPool !== ethers.ZeroAddress) {
@@ -208,7 +208,7 @@ async function upsertTemplate(templateId, meta = {}) {
       templateId,
       tpl.token,
       tpl.poolSize.toString(),
-      tpl.entryFee.toString()
+      tpl.entryFee.toString(),
     );
   }
 }
@@ -219,7 +219,7 @@ async function upsertPoolFromTemplate(
   tokenAddress,
   poolSize,
   entryFee,
-  meta = {}
+  meta = {},
 ) {
   await ensureToken(tokenAddress);
   await db.query(
@@ -242,7 +242,7 @@ async function upsertPoolFromTemplate(
       meta.txHash || null,
       meta.blockNumber || null,
       meta.blockTime || null,
-    ]
+    ],
   );
 }
 
@@ -289,7 +289,7 @@ async function handleFactoryLog(log) {
     const factory = new ethers.Contract(
       FACTORY_ADDRESS,
       factoryReadAbi,
-      provider
+      provider,
     );
     const tpl = await factory.getTemplate(templateId);
     await upsertPoolFromTemplate(
@@ -298,7 +298,7 @@ async function handleFactoryLog(log) {
       tpl.token,
       tpl.poolSize.toString(),
       tpl.entryFee.toString(),
-      meta
+      meta,
     );
     return { newPools: [poolAddress] };
   }
@@ -319,8 +319,8 @@ async function handlePoolLog(log) {
     log.index !== undefined
       ? Number(log.index)
       : log.logIndex !== undefined
-      ? Number(log.logIndex)
-      : 0;
+        ? Number(log.logIndex)
+        : 0;
   const block = await provider.getBlock(blockNumber);
   const blockTime = block?.timestamp
     ? new Date(Number(block.timestamp) * 1000)
@@ -328,12 +328,12 @@ async function handlePoolLog(log) {
   if (parsed.name === 'TicketPurchased') {
     const account = parsed.args.account;
     const amount = parsed.args.amount;
-    console.log(
-      `TicketPurchased pool=${poolId} account=${account} amount=${amount.toString()} tx=${txHash} logIndex=${logIndex}`
-    );
+    // console.log(
+    //   `TicketPurchased pool=${poolId} account=${account} amount=${amount.toString()} tx=${txHash} logIndex=${logIndex}`,
+    // );
     const poolRes = await db.query(
       'SELECT entry_fee, deposited, total_entries FROM pools WHERE pool_id = $1',
-      [poolId]
+      [poolId],
     );
     if (!poolRes.rows.length) return;
     const entryFee = BigInt(poolRes.rows[0].entry_fee || '0');
@@ -353,7 +353,7 @@ async function handlePoolLog(log) {
         blockNumber,
         blockTime,
         logIndex,
-      ]
+      ],
     );
     if (insertRes.rowCount > 0) {
       await db.query(
@@ -364,7 +364,7 @@ async function handlePoolLog(log) {
                SELECT COUNT(DISTINCT participant_address) FROM participants WHERE pool_id = $1
              )
          WHERE pool_id = $1`,
-        [poolId, amountBig.toString(), entries.toString()]
+        [poolId, amountBig.toString(), entries.toString()],
       );
     }
     return;
@@ -373,9 +373,9 @@ async function handlePoolLog(log) {
   if (parsed.name === 'PoolClosed') {
     const jackpotAmount = parsed.args.jackpotAmount.toString();
     const consolationAmount = parsed.args.consolationAmount.toString();
-    console.log(
-      `PoolClosed pool=${poolId} jackpot=${jackpotAmount} consolation=${consolationAmount} tx=${txHash} logIndex=${logIndex}`
-    );
+    // console.log(
+    //   `PoolClosed pool=${poolId} jackpot=${jackpotAmount} consolation=${consolationAmount} tx=${txHash} logIndex=${logIndex}`,
+    // );
     await db.query(
       `UPDATE pools
        SET closed = TRUE,
@@ -385,7 +385,14 @@ async function handlePoolLog(log) {
            closed_block_number = $5,
            closed_block_time = $6
        WHERE pool_id = $1`,
-      [poolId, jackpotAmount, consolationAmount, txHash, blockNumber, blockTime]
+      [
+        poolId,
+        jackpotAmount,
+        consolationAmount,
+        txHash,
+        blockNumber,
+        blockTime,
+      ],
     );
     return;
   }
@@ -395,9 +402,9 @@ async function handlePoolLog(log) {
     const rewardType = Number(parsed.args.rewardType);
     const amount = parsed.args.amount.toString();
     const prizeType = rewardType === 0 ? 'jackpot' : 'consolation';
-    console.log(
-      `PrizeClaimed detected pool=${poolId} winner=${winner} type=${prizeType} amount=${amount} tx=${txHash} logIndex=${logIndex}`
-    );
+    // console.log(
+    //   `PrizeClaimed detected pool=${poolId} winner=${winner} type=${prizeType} amount=${amount} tx=${txHash} logIndex=${logIndex}`,
+    // );
     try {
       const ins = await db.query(
         `INSERT INTO winners (pool_id, winner_address, amount, prize_type, tx_hash, block_number, block_time, log_index, created_at)
@@ -413,18 +420,18 @@ async function handlePoolLog(log) {
           blockNumber,
           blockTime,
           logIndex,
-        ]
+        ],
       );
       if (ins.rowCount > 0 && prizeType === 'jackpot') {
         await db.query(
           `UPDATE pools SET jackpot_winner = $2, jackpot_amount = COALESCE(jackpot_amount, $3) WHERE pool_id = $1`,
-          [poolId, winner, amount]
+          [poolId, winner, amount],
         );
       }
     } catch (err) {
       console.warn(
         `Failed to insert winner for ${poolId} (log ${txHash}@${logIndex}):`,
-        err
+        err,
       );
     }
     return;
@@ -438,7 +445,7 @@ async function getKnownPools() {
 
 async function getFullOpenPools() {
   const { rows } = await db.query(
-    'SELECT pool_id FROM pools WHERE closed = FALSE AND deposited IS NOT NULL AND pool_size IS NOT NULL AND deposited >= pool_size'
+    'SELECT pool_id FROM pools WHERE closed = FALSE AND deposited IS NOT NULL AND pool_size IS NOT NULL AND deposited >= pool_size',
   );
   return rows.map((r) => r.pool_id);
 }
@@ -448,7 +455,7 @@ async function getClosedPools() {
     `SELECT p.pool_id
      FROM pools p
      LEFT JOIN relayer_state r ON p.pool_id = r.pool_id
-     WHERE p.closed = TRUE AND (r.last_action IS NULL OR r.last_action <> 'completed')`
+     WHERE p.closed = TRUE AND (r.last_action IS NULL OR r.last_action <> 'completed')`,
   );
   return rows.map((r) => r.pool_id);
 }
@@ -456,7 +463,7 @@ async function getClosedPools() {
 async function getRelayerCheckpoint(poolId) {
   const { rows } = await db.query(
     'SELECT last_action FROM relayer_state WHERE pool_id = $1',
-    [poolId]
+    [poolId],
   );
   return rows.length ? rows[0].last_action : null;
 }
@@ -466,7 +473,7 @@ async function setRelayerCheckpoint(poolId, action) {
     `INSERT INTO relayer_state (pool_id, last_action, updated_at)
      VALUES ($1, $2, NOW())
      ON CONFLICT (pool_id) DO UPDATE SET last_action = EXCLUDED.last_action, updated_at = NOW()`,
-    [poolId, action]
+    [poolId, action],
   );
 }
 
@@ -479,7 +486,7 @@ async function processRange(fromBlock, toBlock, poolAddresses) {
     ],
   ];
 
-  console.log(`Processing blocks ${fromBlock} -> ${toBlock}`);
+  // console.log(`Processing blocks ${fromBlock} -> ${toBlock}`);
   const factoryLogs = await provider.getLogs({
     address: FACTORY_ADDRESS,
     fromBlock,
@@ -506,7 +513,7 @@ async function processRange(fromBlock, toBlock, poolAddresses) {
   const poolSet = Array.from(dedupMap.values());
   if (!poolSet.length) {
     console.log(
-      `No pool addresses to process for blocks ${fromBlock}-${toBlock}`
+      `No pool addresses to process for blocks ${fromBlock}-${toBlock}`,
     );
     return poolSet;
   }
@@ -526,9 +533,9 @@ async function processRange(fromBlock, toBlock, poolAddresses) {
     topics: poolTopics,
   });
   if (poolLogs.length === 0) {
-    console.log(
-      `No pool logs found for ${poolSet.length} pools in blocks ${fromBlock}-${toBlock}`
-    );
+    // console.log(
+    //   `No pool logs found for ${poolSet.length} pools in blocks ${fromBlock}-${toBlock}`
+    // );
   } else {
     const tally = {
       TicketPurchased: 0,
@@ -545,10 +552,10 @@ async function processRange(fromBlock, toBlock, poolAddresses) {
         tally.other += 1;
       }
     }
-    console.log(
-      `Pool logs in ${fromBlock}-${toBlock}: total=${poolLogs.length} ` +
-        `TicketPurchased=${tally.TicketPurchased} PoolClosed=${tally.PoolClosed} PrizeClaimed=${tally.PrizeClaimed} other=${tally.other}`
-    );
+    // console.log(
+    //   `Pool logs in ${fromBlock}-${toBlock}: total=${poolLogs.length} ` +
+    //     `TicketPurchased=${tally.TicketPurchased} PoolClosed=${tally.PoolClosed} PrizeClaimed=${tally.PrizeClaimed} other=${tally.other}`
+    // );
   }
 
   for (const log of poolLogs) {
@@ -620,7 +627,7 @@ async function evaluatePool(poolId) {
     const totalEntriesNum = Number(totalEntries);
     const targetWinners = Math.min(
       totalEntriesNum > 0 ? totalEntriesNum - 1 : 0,
-      Math.floor((Number(consolationWinnerBps) * totalEntriesNum) / 10000)
+      Math.floor((Number(consolationWinnerBps) * totalEntriesNum) / 10000),
     );
     const remaining = targetWinners - Number(consolationPayoutIndex);
     if (remaining > 0) {
