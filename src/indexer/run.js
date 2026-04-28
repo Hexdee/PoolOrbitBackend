@@ -81,7 +81,6 @@ const poolWriteAbi = [
   'function consolationPrizeEach() view returns (uint256)',
   'function consolationWinnerBps() view returns (uint96)',
   'function closeIfFull()',
-  'function finalizeWinners()',
   'function batchFinalizeWinners(uint256 iterations)',
   'function payJackpotWinner()',
   'function batchConsolationPayout(uint256 iterations)',
