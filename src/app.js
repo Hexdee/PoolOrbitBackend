@@ -4,7 +4,7 @@ const morgan = require('morgan');
 const templatesRouter = require('./routes/templates');
 const poolsRouter = require('./routes/pools');
 const analyticsRouter = require('./routes/analytics');
-const faucetRouter = require('./routes/faucet');
+const opsRouter = require('./routes/ops');
 
 const app = express();
 
@@ -35,7 +35,13 @@ app.get('/health', (_req, res) => {
 app.use('/templates', templatesRouter);
 app.use('/pools', poolsRouter);
 app.use('/analytics', analyticsRouter);
-app.use('/faucet', faucetRouter);
+app.use('/ops', opsRouter);
+if (process.env.ENABLE_FAUCET === 'true') {
+  // Lazy-require so mainnet deployments don't need faucet env/config.
+  // eslint-disable-next-line global-require
+  const faucetRouter = require('./routes/faucet');
+  app.use('/faucet', faucetRouter);
+}
 
 // Basic error handler to avoid leaking stack traces in responses.
 // eslint-disable-next-line no-unused-vars
