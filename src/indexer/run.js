@@ -438,7 +438,38 @@ async function handlePoolLog(log) {
 }
 
 async function getKnownPools() {
-  const { rows } = await db.query('SELECT pool_id FROM pools');
+  // Only monitor pools that are either:
+  // - the current active pool of an active template, or
+  // - closed but not yet marked completed by the relayer (still producing PrizeClaimed events).
+  const { rows } = await db.query(
+    `SELECT DISTINCT p.pool_id
+     FROM pools p
+     LEFT JOIN relayer_state r ON p.pool_id = r.pool_id
+     LEFT JOIN templates t ON t.template_id = p.template_id
+     WHERE (
+       (p.closed = FALSE AND t.active = TRUE AND t.active_pool_id = p.pool_id)
+       OR
+       (p.closed = TRUE AND (r.last_action IS NULL OR r.last_action <> 'completed'))
+     )`
+  );
+  return rows.map((r) => r.pool_id);
+}
+
+async function filterMonitoredPools(poolIds) {
+  if (!poolIds || poolIds.length === 0) return [];
+  const { rows } = await db.query(
+    `SELECT DISTINCT p.pool_id
+     FROM pools p
+     LEFT JOIN relayer_state r ON p.pool_id = r.pool_id
+     LEFT JOIN templates t ON t.template_id = p.template_id
+     WHERE p.pool_id = ANY($1::text[])
+       AND (
+         (p.closed = FALSE AND t.active = TRUE AND t.active_pool_id = p.pool_id)
+         OR
+         (p.closed = TRUE AND (r.last_action IS NULL OR r.last_action <> 'completed'))
+       )`,
+    [poolIds]
+  );
   return rows.map((r) => r.pool_id);
 }
 
@@ -509,7 +540,9 @@ async function processRange(fromBlock, toBlock, poolAddresses) {
     const key = addr.toLowerCase();
     if (!dedupMap.has(key)) dedupMap.set(key, addr);
   }
-  const poolSet = Array.from(dedupMap.values());
+  let poolSet = Array.from(dedupMap.values());
+  // Prune pools we no longer need to monitor (inactive legacy pools, completed pools, etc.)
+  poolSet = await filterMonitoredPools(poolSet);
   if (!poolSet.length) {
     console.log(
       `No pool addresses to process for blocks ${fromBlock}-${toBlock}`,

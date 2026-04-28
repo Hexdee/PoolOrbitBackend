@@ -9,6 +9,7 @@
     "indexer:run": "node src/indexer/run.js",
     "migrate": "node scripts/migrate.js",
     "reset:pools": "node scripts/reset-pools.js",
+    "prune:pools": "node scripts/prune-pools.js",
     "deploy:prod": "bash scripts/deploy-prod.sh"
   },
   "keywords": [
