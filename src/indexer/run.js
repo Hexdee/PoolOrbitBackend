@@ -309,6 +309,9 @@ async function handlePoolLog(log) {
   try {
     parsed = poolIface.parseLog(log);
   } catch {
+    console.log(
+      `Unrecognized log at ${log.transactionHash}@${log.logIndex} in pool ${log.address}`,
+    );
     return;
   }
   const poolId = log.address;
@@ -450,7 +453,7 @@ async function getKnownPools() {
        (p.closed = FALSE AND t.active = TRUE AND t.active_pool_id = p.pool_id)
        OR
        (p.closed = TRUE AND (r.last_action IS NULL OR r.last_action <> 'completed'))
-     )`
+     )`,
   );
   return rows.map((r) => r.pool_id);
 }
@@ -468,7 +471,7 @@ async function filterMonitoredPools(poolIds) {
          OR
          (p.closed = TRUE AND (r.last_action IS NULL OR r.last_action <> 'completed'))
        )`,
-    [poolIds]
+    [poolIds],
   );
   return rows.map((r) => r.pool_id);
 }
