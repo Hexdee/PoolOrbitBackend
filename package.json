@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "indexer:run": "node src/indexer/run.js",
     "indexer:recover-tx": "node scripts/recover-missed-tx.js",
+    "indexer:known-pools": "node scripts/show-known-pools.js",
     "migrate": "node scripts/migrate.js",
     "reset:pools": "node scripts/reset-pools.js",
     "prune:pools": "node scripts/prune-pools.js",
